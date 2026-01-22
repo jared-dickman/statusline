@@ -5,6 +5,10 @@
 
 input=$(cat)
 
+# Claude Code context from JSON input
+context_pct=$(echo "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(int(d.get('context_window',{}).get('used_percentage',0)))" 2>/dev/null || echo "0")
+cost_usd=$(echo "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); c=d.get('cost',{}).get('total_cost_usd',0); print(f'{c:.2f}' if c else '')" 2>/dev/null)
+
 # Git context
 branch=$(git branch --show-current 2>/dev/null)
 branch=${branch:-no-git}
@@ -183,5 +187,18 @@ if [ -x "$HOME/.local/bin/active-mcps" ]; then
     active_mcps=$("$HOME/.local/bin/active-mcps" 2>/dev/null)
     [ -n "$active_mcps" ] && status="${status} ${gray}|${reset} ${orange}mcp:${active_mcps}${reset}"
 fi
+
+# Context window (color: green <50%, yellow 50-80%, red >80%)
+yellow=$'\e[38;5;220m'
+if [ "$context_pct" -gt 0 ] 2>/dev/null; then
+    if [ "$context_pct" -lt 50 ]; then ctx_color="$green"
+    elif [ "$context_pct" -lt 80 ]; then ctx_color="$yellow"
+    else ctx_color="$red"
+    fi
+    status="${status} ${gray}|${reset} ${ctx_color}ctx:${context_pct}%${reset}"
+fi
+
+# Session cost
+[ -n "$cost_usd" ] && [ "$cost_usd" != "0.00" ] && status="${status} ${gray}\$${cost_usd}${reset}"
 
 printf '%s\n' "$status"

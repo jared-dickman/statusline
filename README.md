@@ -3,7 +3,7 @@
 Rich, contextual statusline for [Claude Code CLI](https://claude.ai/claude-code) with git, Jira, PR, and dev server awareness.
 
 ```
-🌳 my-project | feature/COMP-123 | "fix auth bug" 2h 📝 3 | COMP-123 | #42 ✓ 5 | 3000 | mcp:chrome
+🌳 my-project | feature/COMP-123 | "fix auth bug" 2h 📝 3 | COMP-123 | #42 ✓ 5 | 3000 | mcp:chrome | ctx:42% $3.21
 ```
 
 ## Features
@@ -20,6 +20,8 @@ Rich, contextual statusline for [Claude Code CLI](https://claude.ai/claude-code)
 | **Stash warning** | Red indicator when stashes exist |
 | **Localhost servers** | Detects project dev servers, clickable ports |
 | **Active MCPs** | Shows running MCP servers |
+| **Context window** | Usage % with color coding (green/yellow/red) |
+| **Session cost** | Running total USD spent this session |
 
 All links are OSC 8 hyperlinks - clickable in iTerm, WezTerm, Kitty, JetBrains terminals.
 
