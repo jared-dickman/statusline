@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Detect localhost dev servers for current project
+# Uses caching to keep statusline fast
+
+set -euo pipefail
+
+CACHE_DIR="/tmp/localhost-ports-cache"
+CACHE_TTL=5
+PROJECT_DIR="${1:-$(pwd)}"
+
+mkdir -p "$CACHE_DIR"
+
+cache_key=$(echo "$PROJECT_DIR" | md5 -q 2>/dev/null || echo "$PROJECT_DIR" | md5sum | cut -d' ' -f1)
+cache_file="$CACHE_DIR/$cache_key"
+lock_file="$cache_file.lock"
+
+is_cache_valid() {
+    [[ -f "$cache_file" ]] || return 1
+    local mtime now
+    mtime=$(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null)
+    now=$(date +%s)
+    (( now - mtime < CACHE_TTL ))
+}
+
+scan_ports() {
+    local pids
+    pids=$(lsof -i TCP -sTCP:LISTEN -P -n 2>/dev/null | awk '/node/{print $2}' | sort -u | paste -sd, -)
+    [[ -z "$pids" ]] && return
+
+    lsof -P -p "$pids" 2>/dev/null | awk -v dir="$PROJECT_DIR" '
+    /LISTEN/ {
+        pid = $2
+        n = split($9, a, ":")
+        ports[pid] = a[n]
+    }
+    $4 == "cwd" {
+        cwds[$2] = $NF
+    }
+    END {
+        for (pid in ports) {
+            if (cwds[pid] && index(cwds[pid], dir) == 1) {
+                port = ports[pid]
+                if (!seen[port]++) printf "%s ", port
+            }
+        }
+    }'
+}
+
+acquire_lock() {
+    local max_wait=50 waited=0
+    while ! mkdir "$lock_file" 2>/dev/null; do
+        if [[ -d "$lock_file" ]]; then
+            local lock_age now
+            lock_age=$(stat -f %m "$lock_file" 2>/dev/null || stat -c %Y "$lock_file" 2>/dev/null || echo 0)
+            now=$(date +%s)
+            (( now - lock_age > 2 )) && { rm -rf "$lock_file"; continue; }
+        fi
+        sleep 0.01
+        ((waited++))
+        (( waited >= max_wait )) && { rm -rf "$lock_file"; return 1; }
+    done
+}
+
+release_lock() { rm -rf "$lock_file"; }
+
+if is_cache_valid; then
+    cat "$cache_file"
+    exit 0
+fi
+
+if acquire_lock; then
+    trap release_lock EXIT
+    is_cache_valid && { cat "$cache_file"; exit 0; }
+    result=$(scan_ports | sed 's/ $//')
+    echo "$result" > "$cache_file"
+    echo "$result"
+else
+    [[ -f "$cache_file" ]] && cat "$cache_file"
+fi
