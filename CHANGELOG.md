@@ -12,5 +12,8 @@
 - Git stash warning indicator
 - Localhost dev server detection with clickable ports
 - Active MCP server display
+- **Context window usage** with color-coded percentage (green <50%, yellow 50-80%, red >80%)
+- **Session cost tracking** from Claude Code JSON input
 - Full ANSI 256 color theming
 - OSC 8 hyperlink support for modern terminals
+- Debug output to `/tmp/claude-statusline-debug.json`
