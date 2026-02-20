@@ -46,6 +46,20 @@ Then add to `~/.claude/settings.json`:
 
 All links are [OSC 8 hyperlinks](https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda) — clickable in iTerm, WezTerm, Kitty, JetBrains terminals.
 
+### tmux users
+
+Add to `~/.tmux.conf` based on your version:
+
+```bash
+# tmux 3.4+ (native OSC 8 — recommended)
+set -ga terminal-features "*:hyperlinks"
+
+# tmux 3.3 (DCS passthrough)
+set -g allow-passthrough on
+```
+
+The script auto-detects tmux version and uses the correct hyperlink strategy.
+
 ## Architecture
 
 ```
@@ -74,10 +88,12 @@ Short names map: `chrome-devtools`→`chrome`, `roktgpt`→`gpt`, `rokt code gur
 
 ## Requirements
 
-- bash 4+, git, python3
-- `gh` CLI (PR status)
-- `claude` CLI (MCP detection)
-- `lsof` (localhost detection)
+- bash 4+, git
+- JSON parsing: `jq` (fastest) or `python3` (fallback) — basic git features work without either
+- `gh` CLI (PR status, optional)
+- `claude` CLI (MCP detection, optional)
+- `lsof` (localhost detection, optional)
+- Cross-platform: macOS, Linux, Windows (Git Bash/WSL)
 
 ## License
 
