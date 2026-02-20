@@ -145,8 +145,8 @@ PR_CACHE="$CACHE_DIR/gh-pr-${worktree:-none}-${branch//\//_}"
 PR_CHECKS_CACHE="$CACHE_DIR/gh-checks-${worktree:-none}-${branch//\//_}"
 
 if command -v gh >/dev/null 2>&1 && [ "$branch" != "no-git" ]; then
-    if cache_stale "$PR_CACHE" 45; then
-        gh pr view --json number,url,commits > "$PR_CACHE" 2>/dev/null || echo "" > "$PR_CACHE"
+    if cache_stale "$PR_CACHE" 120; then
+        gh pr view --json number,url,commits > "$PR_CACHE" 2>/dev/null || : > "$PR_CACHE"
     fi
     pr_data=$(cat "$PR_CACHE" 2>/dev/null)
 
@@ -162,7 +162,7 @@ if command -v gh >/dev/null 2>&1 && [ "$branch" != "no-git" ]; then
         fi
 
         if [ -n "$pr_number" ]; then
-            if cache_stale "$PR_CHECKS_CACHE" 45; then
+            if cache_stale "$PR_CHECKS_CACHE" 120; then
                 if command -v jq >/dev/null 2>&1; then
                     gh pr checks --json state,link 2>/dev/null | jq -r '
                         if length == 0 then "unknown||"
@@ -228,15 +228,15 @@ if [ -n "$TMUX" ]; then
     fi
 fi
 
-# OSC 8 hyperlink — uses printf %b for reliable escape handling
+# OSC 8 hyperlink — ST terminator (\e\\) for best compatibility
 # tmux 3.4+: native OSC 8 (requires `set -ga terminal-features "*:hyperlinks"`)
 # tmux <3.4: DCS passthrough (requires `set -g allow-passthrough on` for 3.3+)
 link() {
     local url="$1" text="$2"
     if [ "$TMUX_LINK_MODE" = "passthrough" ]; then
-        printf '%b' "\ePtmux;\e\e]8;;${url}\a${text}\e\e]8;;\a\e\\"
+        printf '%s' $'\e'"Ptmux;"$'\e\e'"]8;;${url}"$'\e\e'"\\""${text}"$'\e\e'"]8;;"$'\e\e'"\\"$'\e'"\\"
     else
-        printf '%b' "\e]8;;${url}\a${text}\e]8;;\a"
+        printf '%s' $'\e]8;;'"${url}"$'\e\\'"${text}"$'\e]8;;\e\\'
     fi
 }
 
