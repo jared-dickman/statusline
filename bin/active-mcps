@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Detect active MCP servers with caching
+# Show currently connected MCP servers via `claude mcp list`
+# Filters out per-project disabled servers from ~/.claude.json
+# Cache is per-cwd so different projects get correct results
 
-CACHE_FILE="/tmp/active-mcps-cache"
-CACHE_TTL=10
+export PATH="/opt/homebrew/bin:$PATH"
+
+cache_key=$(echo "$PWD" | md5 2>/dev/null || echo "$PWD" | md5sum 2>/dev/null | cut -d' ' -f1)
+CACHE_FILE="/tmp/active-mcps-cache-${cache_key}"
+CACHE_TTL=30
 
 if [[ -f "$CACHE_FILE" ]]; then
     mtime=$(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null)
@@ -13,21 +18,74 @@ if [[ -f "$CACHE_FILE" ]]; then
     fi
 fi
 
-scan_mcps() {
-    ps aux 2>/dev/null | grep -oE '(mcp-server-[a-zA-Z0-9-]+|[c]hrome-devtools-mcp|mcp-remote[[:space:]]+https?://[^[:space:]]+)' | \
-    while read -r line; do
-        if [[ "$line" == mcp-server-* ]]; then
-            echo "${line#mcp-server-}"
-        elif [[ "$line" == "chrome-devtools-mcp" ]]; then
-            echo "chrome"
-        elif [[ "$line" == *roktgpt* ]]; then
-            echo "roktgpt"
-        elif [[ "$line" == mcp-remote* ]]; then
-            echo "remote"
-        fi
-    done | sort -u | tr '\n' ' ' | sed 's/ $//'
+result=$(claude mcp list 2>/dev/null | grep "Connected" | python3 -c "
+import sys, json, os
+
+# Load disabled servers for current project from ~/.claude.json
+disabled = set()
+try:
+    with open(os.path.expanduser('~/.claude.json')) as f:
+        config = json.load(f)
+    cwd = os.getcwd()
+    # Find the longest matching project path (most specific)
+    best_match = ''
+    best_disabled = []
+    for proj_path, proj_data in config.get('projects', {}).items():
+        if cwd == proj_path or cwd.startswith(proj_path + '/'):
+            if len(proj_path) > len(best_match):
+                best_match = proj_path
+                best_disabled = proj_data.get('disabledMcpServers', [])
+    disabled = {name.lower() for name in best_disabled}
+except:
+    pass
+
+SHORT = {
+    'chrome-devtools': 'chrome',
+    'roktgpt': 'gpt',
+    'rokt code guru': 'guru',
+    'playwright': 'pw',
+    'storybook': 'sb',
+    'serena': 'serena',
+    'excalidraw': 'excali',
+    'atlassian': 'atlas',
+    'slack': 'slack',
+    'notion': 'notion',
+    'figma': 'figma',
+    'linear': 'linear',
 }
 
-result=$(scan_mcps)
+out = []
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    # Format: 'name: url/command - status' or 'plugin:x:name: command - status'
+    name_part = line.split(' - ')[0].rsplit(': ', 1)[0].strip() if ' - ' in line else line.split(':')[0].strip()
+
+    # Check if full name is disabled before normalizing
+    if name_part.lower() in disabled:
+        continue
+
+    # Normalize prefixes
+    if name_part.startswith('claude.ai '):
+        name_part = name_part[len('claude.ai '):]
+    elif name_part.startswith('plugin:'):
+        segments = name_part.split(':')
+        name_part = segments[-1].strip() if segments else name_part
+
+    dl = name_part.lower()
+    short = None
+    for key, val in SHORT.items():
+        if key in dl:
+            short = val
+            break
+    if not short:
+        short = dl.replace('mcp-server-', '').replace('-mcp', '')[:8]
+    if short not in out:
+        out.append(short)
+
+print(' '.join(out))
+")
+
 echo "$result" > "$CACHE_FILE"
 echo "$result"

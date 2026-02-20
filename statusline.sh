@@ -3,7 +3,28 @@
 # Features: worktree, branch, commit, files, Jira, PR, stash, localhost, MCP
 # Reads JSON from stdin, outputs ANSI + OSC 8 hyperlink status
 
+# Ensure homebrew binaries (gh, etc) are in PATH
+export PATH="/opt/homebrew/bin:$PATH"
+
 input=$(cat)
+echo "$input" > /tmp/claude-statusline-debug.json 2>/dev/null
+
+# Change to session's working directory for git/gh commands
+session_cwd=$(echo "$input" | python3 -c "import sys,json; print(json.load(sys.stdin).get('cwd',''))" 2>/dev/null)
+[ -n "$session_cwd" ] && [ -d "$session_cwd" ] && cd "$session_cwd"
+
+# Claude Code context from JSON input
+# compact_threshold: 200k window - 45k autocompact buffer ≈ 77.5%
+COMPACT_THRESHOLD=${STATUSLINE_COMPACT_THRESHOLD:-77}
+raw_context_pct=$(echo "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('context_window',{}).get('used_percentage',0))" 2>/dev/null || echo "0")
+# Scale: if used_percentage=75% and threshold=77%, we're at ~97% toward compaction
+context_pct=$(python3 -c "
+raw = float('$raw_context_pct')
+threshold = float('$COMPACT_THRESHOLD')
+scaled = min(100, (raw / threshold) * 100) if threshold > 0 else raw
+print(int(scaled))
+" 2>/dev/null || echo "0")
+cost_usd=$(echo "$input" | python3 -c "import sys,json; d=json.load(sys.stdin); c=d.get('cost',{}).get('total_cost_usd',0); print(f'{c:.2f}' if c else '')" 2>/dev/null)
 
 # Git context
 branch=$(git branch --show-current 2>/dev/null)
@@ -118,10 +139,10 @@ red=$'\e[38;5;196m'
 green=$'\e[38;5;114m'
 orange=$'\e[38;5;208m'
 
-# OSC 8 hyperlink
+# OSC 8 hyperlink (using BEL terminator for better compatibility)
 link() {
     local url="$1" text="$2"
-    printf '%s' $'\e]8;;'"${url}"$'\e\\'"${text}"$'\e]8;;\e\\'
+    printf '%s' $'\e]8;;'"${url}"$'\a'"${text}"$'\e]8;;\a'
 }
 
 status=""
@@ -172,9 +193,9 @@ if [ -x "$HOME/.local/bin/localhost-ports" ]; then
         server_links=""
         for port in $localhost_ports; do
             url="http://localhost:${port}"
-            server_links="${server_links}$(link "$url" "$port") "
+            server_links="${server_links}${green}$(link "$url" "$port")${reset} "
         done
-        status="${status} ${gray}|${reset} ${green}${server_links% }${reset}"
+        status="${status} ${gray}|${reset} ${server_links% }"
     fi
 fi
 
@@ -183,5 +204,18 @@ if [ -x "$HOME/.local/bin/active-mcps" ]; then
     active_mcps=$("$HOME/.local/bin/active-mcps" 2>/dev/null)
     [ -n "$active_mcps" ] && status="${status} ${gray}|${reset} ${orange}mcp:${active_mcps}${reset}"
 fi
+
+# Context window (color: green <50%, yellow 50-80%, red >80%)
+yellow=$'\e[38;5;220m'
+if [ "$context_pct" -gt 0 ] 2>/dev/null; then
+    if [ "$context_pct" -lt 50 ]; then ctx_color="$green"
+    elif [ "$context_pct" -lt 80 ]; then ctx_color="$yellow"
+    else ctx_color="$red"
+    fi
+    status="${status} ${gray}|${reset} ${ctx_color}ctx:${context_pct}%${reset}"
+fi
+
+# Session cost
+[ -n "$cost_usd" ] && [ "$cost_usd" != "0.00" ] && status="${status} ${gray}\$${cost_usd}${reset}"
 
 printf '%s\n' "$status"
