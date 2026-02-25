@@ -6,6 +6,20 @@ Rich, contextual statusline for [Claude Code CLI](https://docs.anthropic.com/en/
 🌳 my-project | feature/COMP-123 | "fix auth bug" 2h 📝 3 | COMP-123 | #42 ✓ 5 | 3000 | mcp:chrome guru | ctx:42% $3.21
 ```
 
+## How it works
+
+Claude Code has a [`statusLine` feature](https://code.claude.com/docs/en/statusline) that pipes JSON session data (cwd, context window %, cost) to an external command. This repo is that command — a bash script that combines Claude Code's JSON with local git/gh/mcp data into one ANSI-formatted status line.
+
+```
+Claude Code  ──JSON on stdin──▶  statusline.sh  ──ANSI──▶  terminal status line
+                                      │
+                                 git, gh, claude CLI
+                                 bin/active-mcps
+                                 bin/localhost-ports
+```
+
+**Without the `statusLine` config in `settings.json`, the script has no data source and context/cost segments will be empty.** See the [official docs](https://code.claude.com/docs/en/statusline) for the latest on supported JSON fields and options.
+
 ## Install
 
 ```bash
@@ -13,7 +27,31 @@ git clone https://github.com/jared-dickman/statusline.git ~/statusline
 cd ~/statusline && bash install.sh
 ```
 
-Then add to `~/.claude/settings.json`:
+The installer:
+- Copies `statusline.sh` to `~/.claude/statusline/`
+- Copies helper scripts to `~/.local/bin/`
+- **Auto-configures `~/.claude/settings.json`** with the required `statusLine` block (uses `jq` or `python3`)
+- If a `statusLine` command already exists in settings.json, the installer **will not overwrite it** — it prints both the current and new commands with options to replace, wrap, or skip
+
+Verify your setup:
+
+```bash
+~/.claude/statusline/statusline.sh --doctor
+```
+
+Restart Claude Code after installing.
+
+### Existing statusline conflict
+
+Claude Code only supports **one** `statusLine.command`. If the user already has a statusline configured, the installer detects this and stops with a clear summary of what's set and what options exist. The user (or their agent) should decide:
+
+- **Replace**: Update `statusLine.command` in `~/.claude/settings.json` to `~/.claude/statusline/statusline.sh`
+- **Wrap**: Create a wrapper script that calls both statuslines and merges output (advanced — Claude Code expects a single line of ANSI output)
+- **Skip**: Keep the existing statusline unchanged
+
+### Manual setup (if auto-config fails)
+
+Add to `~/.claude/settings.json`:
 ```json
 {
   "statusLine": {
@@ -60,17 +98,17 @@ set -g allow-passthrough on
 
 The script auto-detects tmux version and uses the correct hyperlink strategy.
 
-## Architecture
+## Troubleshooting
 
-```
-statusline.sh          ← Main script, reads JSON from stdin, outputs ANSI
-├── bin/active-mcps    ← MCP detection: `claude mcp list` + disabled filtering
-└── bin/localhost-ports ← Dev server detection: lsof port scanning
-```
+Common issues:
+- **Context/cost empty**: `statusLine` not configured in `~/.claude/settings.json` — re-run `bash install.sh`
+- **No git info**: Script can't `cd` to project dir — check that Claude Code is sending JSON with `cwd`
+- **No PR status**: Install `gh` CLI and authenticate with `gh auth login`
+- **No MCP servers**: Install `claude` CLI, or check `~/.local/bin/active-mcps` exists
 
-`statusline.sh` receives JSON from Claude Code on stdin with `cwd`, `context_window.used_percentage`, `cost.total_cost_usd`. It `cd`s to `cwd` for all git/gh commands.
+Debug: raw JSON input is logged to `/tmp/claude-statusline-debug.json`
 
-### MCP filtering
+## MCP filtering
 
 `bin/active-mcps` uses `claude mcp list` as the authoritative source. It cross-references `~/.claude.json` to filter out per-project disabled servers (`projects[path].disabledMcpServers`). Cache is keyed by `$PWD` md5 so different projects get correct results.
 
