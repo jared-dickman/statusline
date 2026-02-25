@@ -243,6 +243,19 @@ echo "$result" | grep -q $'\e\[38;5;220m''ctx:' && pass "mid context → yellow"
 result=$(echo '{"context_window":{"used_percentage":75}}' | bash "$SCRIPT_DIR/statusline.sh" 2>/dev/null)
 echo "$result" | grep -q $'\e\[38;5;196m''ctx:' && pass "high context → red" || fail "high context color"
 
+# ── statusline --doctor ───────────────────────────────────────────
+
+section "statusline.sh --doctor"
+
+result=$(bash "$SCRIPT_DIR/statusline.sh" --doctor 2>/dev/null)
+echo "$result" | grep -q "statusline doctor" && pass "--doctor runs" || fail "--doctor didn't run"
+echo "$result" | grep -q "git" && pass "--doctor checks git" || fail "--doctor missing git check"
+echo "$result" | grep -q "jq" && pass "--doctor checks jq" || fail "--doctor missing jq check"
+echo "$result" | grep -q "settings.json" && pass "--doctor checks settings.json" || fail "--doctor missing settings check"
+
+result=$(bash "$SCRIPT_DIR/statusline.sh" --doctor 2>/dev/null)
+echo "$result" | grep -qE "[0-9]+ ok" && pass "--doctor shows summary" || fail "--doctor missing summary"
+
 # ── install.sh ────────────────────────────────────────────────────
 
 section "install.sh"
@@ -250,6 +263,7 @@ section "install.sh"
 [[ -f "$SCRIPT_DIR/install.sh" ]] && pass "exists" || fail "missing"
 grep -q 'chmod +x' "$SCRIPT_DIR/install.sh" && pass "sets executable bits" || fail "missing chmod"
 grep -q 'active-mcps' "$SCRIPT_DIR/install.sh" && pass "installs active-mcps" || fail "missing active-mcps install"
+grep -q 'settings.json\|SETTINGS_FILE' "$SCRIPT_DIR/install.sh" && pass "auto-configures settings.json" || fail "missing settings.json auto-config"
 
 # ── localhost-ports ───────────────────────────────────────────────
 

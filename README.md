@@ -6,6 +6,20 @@ Rich, contextual statusline for [Claude Code CLI](https://docs.anthropic.com/en/
 🌳 my-project | feature/COMP-123 | "fix auth bug" 2h 📝 3 | COMP-123 | #42 ✓ 5 | 3000 | mcp:chrome guru | ctx:42% $3.21
 ```
 
+## How it works
+
+Claude Code has a `statusLine` feature that pipes JSON session data (cwd, context window %, cost) to an external command. This repo is that command — a bash script that combines Claude Code's JSON with local git/gh/mcp data into one ANSI-formatted status line.
+
+```
+Claude Code  ──JSON on stdin──▶  statusline.sh  ──ANSI──▶  terminal status line
+                                      │
+                                 git, gh, claude CLI
+                                 bin/active-mcps
+                                 bin/localhost-ports
+```
+
+**Without the `statusLine` config in `settings.json`, the script has no data source and context/cost segments will be empty.**
+
 ## Install
 
 ```bash
@@ -13,7 +27,22 @@ git clone https://github.com/jared-dickman/statusline.git ~/statusline
 cd ~/statusline && bash install.sh
 ```
 
-Then add to `~/.claude/settings.json`:
+The installer:
+- Copies `statusline.sh` to `~/.claude/statusline/`
+- Copies helper scripts to `~/.local/bin/`
+- **Auto-configures `~/.claude/settings.json`** with the required `statusLine` block (uses `jq` or `python3`)
+
+Verify your setup:
+
+```bash
+~/.claude/statusline/statusline.sh --doctor
+```
+
+Restart Claude Code after installing.
+
+### Manual setup (if auto-config fails)
+
+Add to `~/.claude/settings.json`:
 ```json
 {
   "statusLine": {
@@ -59,6 +88,22 @@ set -g allow-passthrough on
 ```
 
 The script auto-detects tmux version and uses the correct hyperlink strategy.
+
+## Troubleshooting
+
+Run `--doctor` to check your setup:
+
+```bash
+~/.claude/statusline/statusline.sh --doctor
+```
+
+Common issues:
+- **Context/cost empty**: `statusLine` not configured in `~/.claude/settings.json` — re-run `bash install.sh`
+- **No git info**: Script can't `cd` to project dir — check that Claude Code is sending JSON with `cwd`
+- **No PR status**: Install `gh` CLI and authenticate with `gh auth login`
+- **No MCP servers**: Install `claude` CLI, or check `~/.local/bin/active-mcps` exists
+
+Debug: raw JSON input is logged to `/tmp/claude-statusline-debug.json`
 
 ## Architecture
 

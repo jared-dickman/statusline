@@ -6,6 +6,81 @@
 # Ensure homebrew binaries (gh, jq, etc) are in PATH
 export PATH="/opt/homebrew/bin:$PATH"
 
+# --- Doctor mode: verify setup ---
+if [ "${1:-}" = "--doctor" ]; then
+    ok=0 warn=0 fail=0
+    check() {
+        local label="$1" status="$2" detail="$3"
+        case "$status" in
+            ok)   printf "  ✓ %s\n" "$label"; ((ok++));;
+            warn) printf "  ⚠ %s — %s\n" "$label" "$detail"; ((warn++));;
+            fail) printf "  ✗ %s — %s\n" "$label" "$detail"; ((fail++));;
+        esac
+    }
+    echo "statusline doctor"
+    echo ""
+
+    [ -x "$HOME/.claude/statusline/statusline.sh" ] \
+        && check "statusline.sh installed" ok \
+        || check "statusline.sh installed" fail "run: bash install.sh"
+
+    settings="$HOME/.claude/settings.json"
+    if [ -f "$settings" ]; then
+        if grep -q '"statusLine"' "$settings" 2>/dev/null; then
+            check "settings.json configured" ok
+        else
+            check "settings.json configured" fail "missing statusLine block — run: bash install.sh"
+        fi
+    else
+        check "settings.json configured" fail "$settings not found — run: bash install.sh"
+    fi
+
+    command -v jq >/dev/null 2>&1 \
+        && check "jq (JSON parser)" ok \
+        || { command -v python3 >/dev/null 2>&1 \
+            && check "jq (JSON parser)" warn "using python3 fallback (slower)" \
+            || check "jq (JSON parser)" fail "install jq or python3"; }
+
+    command -v git >/dev/null 2>&1 \
+        && check "git" ok \
+        || check "git" fail "required for all git features"
+
+    command -v gh >/dev/null 2>&1 \
+        && check "gh CLI (PR status)" ok \
+        || check "gh CLI (PR status)" warn "optional — install for PR status"
+
+    command -v claude >/dev/null 2>&1 \
+        && check "claude CLI (MCP detection)" ok \
+        || check "claude CLI (MCP detection)" warn "optional — install for MCP server list"
+
+    [ -x "$HOME/.local/bin/active-mcps" ] \
+        && check "bin/active-mcps" ok \
+        || check "bin/active-mcps" warn "not found in ~/.local/bin/"
+
+    [ -x "$HOME/.local/bin/localhost-ports" ] \
+        && check "bin/localhost-ports" ok \
+        || check "bin/localhost-ports" warn "not found in ~/.local/bin/"
+
+    if [ -n "$TMUX" ]; then
+        check "tmux detected" ok
+        _tv=$(tmux -V 2>/dev/null | grep -oE '[0-9]+\.[0-9a-z]+' | head -1)
+        _tmaj="${_tv%%.*}"
+        if [ "${_tmaj:-0}" -ge 3 ]; then
+            check "tmux version ($_tv)" ok
+        else
+            check "tmux version ($_tv)" warn "3.4+ recommended for native hyperlinks"
+        fi
+    fi
+
+    echo ""
+    printf "  %d ok" "$ok"
+    [ "$warn" -gt 0 ] && printf ", %d warnings" "$warn"
+    [ "$fail" -gt 0 ] && printf ", %d failed" "$fail"
+    echo ""
+    [ "$fail" -gt 0 ] && exit 1
+    exit 0
+fi
+
 input=$(cat)
 echo "$input" > /tmp/claude-statusline-debug.json 2>/dev/null
 
