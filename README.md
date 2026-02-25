@@ -8,7 +8,7 @@ Rich, contextual statusline for [Claude Code CLI](https://docs.anthropic.com/en/
 
 ## How it works
 
-Claude Code has a `statusLine` feature that pipes JSON session data (cwd, context window %, cost) to an external command. This repo is that command — a bash script that combines Claude Code's JSON with local git/gh/mcp data into one ANSI-formatted status line.
+Claude Code has a [`statusLine` feature](https://code.claude.com/docs/en/statusline) that pipes JSON session data (cwd, context window %, cost) to an external command. This repo is that command — a bash script that combines Claude Code's JSON with local git/gh/mcp data into one ANSI-formatted status line.
 
 ```
 Claude Code  ──JSON on stdin──▶  statusline.sh  ──ANSI──▶  terminal status line
@@ -19,6 +19,8 @@ Claude Code  ──JSON on stdin──▶  statusline.sh  ──ANSI──▶  t
 ```
 
 **Without the `statusLine` config in `settings.json`, the script has no data source and context/cost segments will be empty.**
+
+See the [official Claude Code statusline docs](https://code.claude.com/docs/en/statusline) for the latest on supported JSON fields, `padding` options, and the `/statusline` slash command.
 
 ## Install
 
@@ -31,6 +33,7 @@ The installer:
 - Copies `statusline.sh` to `~/.claude/statusline/`
 - Copies helper scripts to `~/.local/bin/`
 - **Auto-configures `~/.claude/settings.json`** with the required `statusLine` block (uses `jq` or `python3`)
+- If a `statusLine` command already exists in settings.json, the installer **will not overwrite it** — it prints both the current and new commands with options to replace, wrap, or skip
 
 Verify your setup:
 
@@ -39,6 +42,14 @@ Verify your setup:
 ```
 
 Restart Claude Code after installing.
+
+### Existing statusline conflict
+
+Claude Code only supports **one** `statusLine.command`. If the user already has a statusline configured, the installer detects this and stops with a clear summary of what's set and what options exist. The user (or their agent) should decide:
+
+- **Replace**: Update `statusLine.command` in `~/.claude/settings.json` to `~/.claude/statusline/statusline.sh`
+- **Wrap**: Create a wrapper script that calls both statuslines and merges output (advanced — Claude Code expects a single line of ANSI output)
+- **Skip**: Keep the existing statusline unchanged
 
 ### Manual setup (if auto-config fails)
 
