@@ -18,9 +18,7 @@ Claude Code  ──JSON on stdin──▶  statusline.sh  ──ANSI──▶  t
                                  bin/localhost-ports
 ```
 
-**Without the `statusLine` config in `settings.json`, the script has no data source and context/cost segments will be empty.**
-
-See the [official Claude Code statusline docs](https://code.claude.com/docs/en/statusline) for the latest on supported JSON fields, `padding` options, and the `/statusline` slash command.
+**Without the `statusLine` config in `settings.json`, the script has no data source and context/cost segments will be empty.** See the [official docs](https://code.claude.com/docs/en/statusline) for the latest on supported JSON fields and options.
 
 ## Install
 
@@ -102,12 +100,6 @@ The script auto-detects tmux version and uses the correct hyperlink strategy.
 
 ## Troubleshooting
 
-Run `--doctor` to check your setup:
-
-```bash
-~/.claude/statusline/statusline.sh --doctor
-```
-
 Common issues:
 - **Context/cost empty**: `statusLine` not configured in `~/.claude/settings.json` — re-run `bash install.sh`
 - **No git info**: Script can't `cd` to project dir — check that Claude Code is sending JSON with `cwd`
@@ -116,17 +108,7 @@ Common issues:
 
 Debug: raw JSON input is logged to `/tmp/claude-statusline-debug.json`
 
-## Architecture
-
-```
-statusline.sh          ← Main script, reads JSON from stdin, outputs ANSI
-├── bin/active-mcps    ← MCP detection: `claude mcp list` + disabled filtering
-└── bin/localhost-ports ← Dev server detection: lsof port scanning
-```
-
-`statusline.sh` receives JSON from Claude Code on stdin with `cwd`, `context_window.used_percentage`, `cost.total_cost_usd`. It `cd`s to `cwd` for all git/gh commands.
-
-### MCP filtering
+## MCP filtering
 
 `bin/active-mcps` uses `claude mcp list` as the authoritative source. It cross-references `~/.claude.json` to filter out per-project disabled servers (`projects[path].disabledMcpServers`). Cache is keyed by `$PWD` md5 so different projects get correct results.
 
