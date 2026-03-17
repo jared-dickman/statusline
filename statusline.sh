@@ -150,51 +150,80 @@ cache_stale() {
     [ "$file_age" -gt "$max_age" ]
 }
 
-# --- Git context ---
-branch=$(git branch --show-current 2>/dev/null)
-branch=${branch:-no-git}
-toplevel=$(git rev-parse --show-toplevel 2>/dev/null)
-worktree=""
-[ -n "$toplevel" ] && worktree="${toplevel##*/}"
+# --- Git context (all git ops behind a single lock to prevent index.lock contention) ---
+_repo_hash=$(printf '%s' "${session_cwd:-none}" | md5 -q 2>/dev/null || printf '%s' "${session_cwd:-none}" | md5sum 2>/dev/null | cut -c1-8)
+_repo_hash="${_repo_hash:0:8}"
+GIT_LOCK="$CACHE_DIR/git-${_repo_hash}.lock"
+GIT_BRANCH_CACHE="$CACHE_DIR/git-branch-${_repo_hash}"
+GIT_STATUS_CACHE="$CACHE_DIR/git-status-${_repo_hash}"
+STASH_CACHE="$CACHE_DIR/git-stash-${_repo_hash}"
 
-branch_suffix=""
-[[ "$branch" == *"/"* ]] && branch_suffix="${branch##*/}"
+_write_cache() { echo "$2" > "$1.tmp.$$" && mv "$1.tmp.$$" "$1"; }
 
-# Last commit (single git log call)
-last_commit_msg=""
-commit_age=""
-if [ "$branch" != "no-git" ]; then
-    commit_info=$(git log -1 --pretty=format:'%s|%ct' 2>/dev/null)
-    last_commit_msg="${commit_info%|*}"
-    last_commit_msg="${last_commit_msg:0:30}"
-    commit_timestamp="${commit_info##*|}"
-    if [ -n "$commit_timestamp" ]; then
-        current_time=$(date +%s)
-        age_seconds=$((current_time - commit_timestamp))
-        age_minutes=$((age_seconds / 60))
-        age_hours=$((age_seconds / 3600))
-        age_days=$((age_seconds / 86400))
-        if [ $age_days -gt 0 ]; then commit_age="${age_days}d"
-        elif [ $age_hours -gt 0 ]; then commit_age="${age_hours}h"
-        elif [ $age_minutes -gt 0 ]; then commit_age="${age_minutes}m"
-        else commit_age="now"
+acquire_git_lock() {
+    if ( set -o noclobber; echo $$ > "$GIT_LOCK" ) 2>/dev/null; then
+        return 0
+    fi
+    local lock_pid lock_age
+    lock_age=$(( $(date +%s) - $(file_mtime "$GIT_LOCK") ))
+    lock_pid=$(cat "$GIT_LOCK" 2>/dev/null)
+    if [ "$lock_age" -gt 30 ] || { [ -n "$lock_pid" ] && ! kill -0 "$lock_pid" 2>/dev/null; }; then
+        rm -f "$GIT_LOCK"
+        if ( set -o noclobber; echo $$ > "$GIT_LOCK" ) 2>/dev/null; then
+            return 0
         fi
     fi
+    return 1
+}
+
+branch="no-git"
+worktree=""
+branch_suffix=""
+files_modified=0
+files_added=0
+stash_count=0
+
+needs_refresh=false
+cache_stale "$GIT_BRANCH_CACHE" 10 && needs_refresh=true
+cache_stale "$GIT_STATUS_CACHE" 5 && needs_refresh=true
+cache_stale "$STASH_CACHE" 30 && needs_refresh=true
+
+if $needs_refresh && acquire_git_lock; then
+    if cache_stale "$GIT_BRANCH_CACHE" 10; then
+        _b=$(git branch --show-current 2>/dev/null)
+        _t=$(git rev-parse --show-toplevel 2>/dev/null)
+        _write_cache "$GIT_BRANCH_CACHE" "${_b:-no-git}|${_t}"
+    fi
+    if cache_stale "$GIT_STATUS_CACHE" 5; then
+        git_short=$(git status --short 2>/dev/null)
+        if [ -n "$git_short" ]; then
+            gs_added=$(echo "$git_short" | grep -c '^?' 2>/dev/null || echo 0)
+            gs_modified=$(echo "$git_short" | grep -cv '^?' 2>/dev/null || echo 0)
+        else
+            gs_added=0; gs_modified=0
+        fi
+        _write_cache "$GIT_STATUS_CACHE" "${gs_modified}|${gs_added}"
+    fi
+    if cache_stale "$STASH_CACHE" 30; then
+        _stash=$(git stash list 2>/dev/null | wc -l | tr -d ' ')
+        _write_cache "$STASH_CACHE" "$_stash"
+    fi
+    rm -f "$GIT_LOCK"
 fi
 
-# --- git status (cached 5s) ---
-GIT_STATUS_CACHE="$CACHE_DIR/git-status-${worktree:-none}"
-if cache_stale "$GIT_STATUS_CACHE" 5; then
-    git status --short 2>/dev/null | wc -l | tr -d ' ' > "$GIT_STATUS_CACHE"
-fi
-files_changed=$(cat "$GIT_STATUS_CACHE" 2>/dev/null || echo 0)
-files_changed=${files_changed:-0}
+git_branch_raw=$(cat "$GIT_BRANCH_CACHE" 2>/dev/null || echo "no-git|")
+branch="${git_branch_raw%|*}"
+toplevel="${git_branch_raw#*|}"
+branch=${branch:-no-git}
+[ -n "$toplevel" ] && worktree="${toplevel##*/}"
+[[ "$branch" == *"/"* ]] && branch_suffix="${branch##*/}"
 
-# --- git stash (cached 10s) ---
-STASH_CACHE="$CACHE_DIR/git-stash-${worktree:-none}"
-if cache_stale "$STASH_CACHE" 10; then
-    git stash list 2>/dev/null | wc -l | tr -d ' ' > "$STASH_CACHE"
-fi
+git_status_raw=$(cat "$GIT_STATUS_CACHE" 2>/dev/null || echo "0|0")
+files_modified="${git_status_raw%|*}"
+files_added="${git_status_raw#*|}"
+files_modified=${files_modified:-0}
+files_added=${files_added:-0}
+
 stash_count=$(cat "$STASH_CACHE" 2>/dev/null || echo 0)
 stash_count=${stash_count:-0}
 
@@ -318,7 +347,7 @@ link() {
 status=""
 
 # Worktree
-[ -n "$worktree" ] && status="${cyan}🌳 ${worktree}${reset}"
+[ -n "$worktree" ] && status="${cyan}${worktree}${reset}"
 
 # Branch (skip if matches worktree)
 if [ -z "$branch_suffix" ] || [ "$worktree" != "$branch_suffix" ]; then
@@ -326,17 +355,14 @@ if [ -z "$branch_suffix" ] || [ "$worktree" != "$branch_suffix" ]; then
     status="${status} ${blue}${branch}${reset}"
 fi
 
-# Last commit
-if [ -n "$last_commit_msg" ]; then
-    status="${status} ${gray}|${reset} ${purple}\"${last_commit_msg}\"${reset}"
-    [ -n "$commit_age" ] && status="${status} ${gray}${commit_age}${reset}"
-fi
-
 # Test icon
 [ -n "$test_icon" ] && status="${status} ${gray}|${reset} ${test_icon}"
 
 # Files changed
-[ "$files_changed" -gt 0 ] 2>/dev/null && status="${status} ${purple}📝 ${files_changed}${reset}"
+files_str=""
+[ "$files_modified" -gt 0 ] 2>/dev/null && files_str="${purple}~${files_modified}${reset}"
+[ "$files_added" -gt 0 ] 2>/dev/null && files_str="${files_str:+${files_str} }${green}+${files_added}${reset}"
+[ -n "$files_str" ] && status="${status} ${files_str}"
 
 # Jira link
 if [ -n "$jira_ticket" ] && [ -n "$jira_link" ]; then
