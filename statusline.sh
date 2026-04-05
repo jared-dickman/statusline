@@ -346,11 +346,23 @@ link() {
 
 status=""
 
+# Context window (color: green <50%, yellow 50-80%, red >80%)
+if [ "$context_pct" -gt 0 ] 2>/dev/null; then
+    if [ "$context_pct" -lt 50 ]; then ctx_color="$green"
+    elif [ "$context_pct" -lt 80 ]; then ctx_color="$yellow"
+    else ctx_color="$red"
+    fi
+    status="${ctx_color}ctx:${context_pct}%${reset}"
+fi
+
 # Worktree
-[ -n "$worktree" ] && status="${cyan}${worktree}${reset}"
+if [ -n "$worktree" ]; then
+    [ -n "$status" ] && status="${status} ${gray}|${reset}"
+    status="${status} ${cyan}${worktree}${reset}"
+fi
 
 # Branch (skip if matches worktree)
-if [ -z "$branch_suffix" ] || [ "$worktree" != "$branch_suffix" ]; then
+if [ "$branch" != "$worktree" ] && { [ -z "$branch_suffix" ] || [ "$worktree" != "$branch_suffix" ]; }; then
     [ -n "$status" ] && status="${status} ${gray}|${reset}"
     status="${status} ${blue}${branch}${reset}"
 fi
@@ -398,15 +410,6 @@ fi
 if [ -x "$HOME/.local/bin/active-mcps" ]; then
     active_mcps=$("$HOME/.local/bin/active-mcps" 2>/dev/null)
     [ -n "$active_mcps" ] && status="${status} ${gray}|${reset} ${orange}mcp:${active_mcps}${reset}"
-fi
-
-# Context window (color: green <50%, yellow 50-80%, red >80%)
-if [ "$context_pct" -gt 0 ] 2>/dev/null; then
-    if [ "$context_pct" -lt 50 ]; then ctx_color="$green"
-    elif [ "$context_pct" -lt 80 ]; then ctx_color="$yellow"
-    else ctx_color="$red"
-    fi
-    status="${status} ${gray}|${reset} ${ctx_color}ctx:${context_pct}%${reset}"
 fi
 
 # Session cost
